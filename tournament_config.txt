@@ -1,0 +1,28 @@
+# Texas Hold'em Tournament Configuration
+# This file controls tournament settings
+
+# Number of players (2-10)
+num_players = 4
+
+# Starting chip stack for each player
+starting_chips = 1000
+
+# Initial blind levels
+small_blind = 5
+big_blind = 10
+
+# Blind increase settings
+blind_increase_hands = 10
+blind_multiplier = 1.5
+
+# Safety settings
+max_hands = 200
+
+# Player strategy (all players use same strategy)
+# Options: tight, loose, aggressive, conservative, balanced
+strategy = balanced
+
+# Display settings
+show_detailed_decisions = TRUE
+show_probabilities = TRUE
+show_elimination = TRUE

@@ -1,0 +1,31 @@
+# Texas Hold'em Simulation Configuration
+# Modify these parameters to customize your simulation
+
+# Game Parameters
+num_players=4
+num_hands=5
+small_blind=5
+big_blind=10
+
+# Player Strategies (conservative, moderate, aggressive)
+# Format: player1,player2,player3,player4,etc.
+player_strategies=moderate,conservative,aggressive,moderate
+
+# Probability Thresholds for Decision Making
+# Conservative strategy thresholds
+conservative_fold_threshold=0.20
+conservative_raise_threshold=0.70
+
+# Moderate strategy thresholds  
+moderate_fold_threshold=0.15
+moderate_raise_threshold=0.65
+
+# Aggressive strategy thresholds
+aggressive_fold_threshold=0.10
+aggressive_raise_threshold=0.55
+
+# Output Options
+show_hole_cards=true
+show_probabilities=true
+show_detailed_decisions=true
+show_final_summary=true

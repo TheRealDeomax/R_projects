@@ -1,0 +1,27 @@
+# High Stakes Texas Hold'em Tournament Configuration
+# Fast-paced tournament with aggressive blind increases
+
+# Number of players (6 for more action)
+num_players = 6
+
+# Higher starting stacks for longer play
+starting_chips = 2000
+
+# Higher initial blinds
+small_blind = 10
+big_blind = 20
+
+# Faster blind increases for more pressure
+blind_increase_hands = 8     # Increase blinds every 8 hands
+blind_multiplier = 2.0       # Double the blinds each increase
+
+# Extended safety limit for bigger tournament
+max_hands = 300
+
+# More aggressive strategy for high stakes
+strategy = aggressive
+
+# Full display for high stakes drama
+show_detailed_decisions = true
+show_probabilities = true
+show_elimination = true
