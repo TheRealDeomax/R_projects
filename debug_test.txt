@@ -1,0 +1,11 @@
+num_players = 4
+starting_chips = 100
+small_blind = 5
+big_blind = 10
+blind_increase_hands = 2
+blind_multiplier = 2.0
+max_hands = 10
+strategy = balanced
+show_detailed_decisions = TRUE
+show_probabilities = TRUE
+show_elimination = TRUE

@@ -1,0 +1,11 @@
+num_players = 4
+starting_chips = 500
+small_blind = 10
+big_blind = 20
+blind_increase_hands = 5
+blind_multiplier = 2.0
+max_hands = 50
+strategy = aggressive
+show_detailed_decisions = TRUE
+show_probabilities = TRUE
+show_elimination = TRUE

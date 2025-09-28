@@ -4,6 +4,42 @@
 
 library(combinat)
 
+# ANSI Color codes for card suits
+RED <- "\033[91m"      # Bright red color for Hearts and Diamonds
+BLACK <- "\033[90m"    # Dark gray for Clubs and Spades  
+RESET <- "\033[0m"     # Reset to default color
+BOLD <- "\033[1m"      # Bold text
+
+# Unicode suit symbols with colors
+HEART_SYMBOL <- paste0(RED, "♥", RESET)
+DIAMOND_SYMBOL <- paste0(RED, "♦", RESET)
+CLUB_SYMBOL <- paste0(BLACK, "♣", RESET)
+SPADE_SYMBOL <- paste0(BLACK, "♠", RESET)
+
+# Function to get colored suit symbol
+get_suit_symbol <- function(suit) {
+  switch(suit,
+    "Hearts" = HEART_SYMBOL,
+    "Diamonds" = DIAMOND_SYMBOL,
+    "Clubs" = CLUB_SYMBOL,
+    "Spades" = SPADE_SYMBOL,
+    paste0(BLACK, suit, RESET)  # fallback
+  )
+}
+
+# Function to format a card with colored suit symbol and extra spacing
+format_card <- function(rank, suit) {
+  suit_symbol <- get_suit_symbol(suit)
+  return(paste0(rank, " ", suit_symbol))
+}
+
+# Function to format multiple cards with tab alignment
+format_cards <- function(cards_df) {
+  if(nrow(cards_df) == 0) return("")
+  cards_str <- apply(cards_df, 1, function(x) format_card(x[1], x[2]))
+  return(paste(cards_str, collapse = "\t"))
+}
+
 # Function to read player names
 read_player_names <- function(names_file = "texas_holdem_names.txt") {
   if (!file.exists(names_file)) {
@@ -198,31 +234,175 @@ calculate_win_probability <- function(hole_cards, community_cards, num_opponents
   return(min(0.98, max(0.02, adjusted_prob)))
 }
 
+# Conduct a betting round with raises and re-raises
+conduct_betting_round <- function(active_players, players, hole_cards, community_cards, pot, strategy, round_name) {
+  if(length(active_players) <= 1) {
+    return(list(active_players = active_players, players = players, pot = pot))
+  }
+  
+  current_bet <- 0
+  player_bets <- rep(0, max(players$player))
+  players_acted <- rep(FALSE, max(players$player))
+  betting_action <- TRUE
+  round_count <- 0
+  
+  while(betting_action && length(active_players) > 1 && round_count < 4) {
+    betting_action <- FALSE
+    round_count <- round_count + 1
+    
+    for(player in active_players) {
+      if(players$chips[player] <= 0) next
+      
+      # Calculate win probability
+      if(is.null(community_cards)) {
+        win_prob <- calculate_win_probability(hole_cards[[player]], NULL, length(active_players) - 1)
+        combined_cards <- hole_cards[[player]]
+      } else {
+        win_prob <- calculate_win_probability(hole_cards[[player]], community_cards, length(active_players) - 1)
+        combined_cards <- rbind(hole_cards[[player]], community_cards)
+      }
+      
+      hand_strength <- evaluate_hand(combined_cards)
+      call_amount <- current_bet - player_bets[player]
+      
+      # Skip if already all-in or call amount exceeds chips
+      if(call_amount >= players$chips[player]) {
+        if(players$chips[player] > 0) {
+          # All-in
+          pot <- pot + players$chips[player]
+          player_bets[player] <- player_bets[player] + players$chips[player]
+          players$chips[player] <- 0
+          cat(sprintf("%s: ALL-IN with %d chips! (Win Prob: %.1f%%)\n", 
+                      players$name[player], player_bets[player] - (current_bet - call_amount), win_prob * 100))
+        }
+        next
+      }
+      
+      decision <- make_decision(win_prob, call_amount, pot, players$chips[player], hand_strength$rank, strategy, round_name)
+      
+      if(decision == "fold") {
+        active_players <- active_players[active_players != player]
+        cat(sprintf("%s: FOLD (Win Prob: %.1f%%)\n", players$name[player], win_prob * 100))
+        
+      } else if(decision == "call") {
+        if(call_amount > 0) {
+          pot <- pot + call_amount
+          players$chips[player] <- players$chips[player] - call_amount
+          player_bets[player] <- player_bets[player] + call_amount
+          cat(sprintf("%s: CALL %d (Win Prob: %.1f%%, %s)\n", 
+                      players$name[player], call_amount, win_prob * 100, hand_strength$name))
+        } else {
+          cat(sprintf("%s: CHECK (Win Prob: %.1f%%, %s)\n", 
+                      players$name[player], win_prob * 100, hand_strength$name))
+        }
+        
+      } else if(decision == "raise") {
+        raise_amount <- max(current_bet * 2, current_bet + pot * 0.3, 20)
+        raise_amount <- min(raise_amount, players$chips[player])
+        total_bet <- call_amount + raise_amount
+        
+        pot <- pot + total_bet
+        players$chips[player] <- players$chips[player] - total_bet
+        player_bets[player] <- player_bets[player] + total_bet
+        current_bet <- player_bets[player]
+        betting_action <- TRUE
+        
+        cat(sprintf("%s: RAISE to %d (+%d) (Win Prob: %.1f%%, %s)\n", 
+                    players$name[player], current_bet, raise_amount, win_prob * 100, hand_strength$name))
+        
+      } else if(decision == "big_raise") {
+        raise_amount <- max(pot * 0.8, current_bet * 3, 50)
+        raise_amount <- min(raise_amount, players$chips[player])
+        total_bet <- call_amount + raise_amount
+        
+        pot <- pot + total_bet
+        players$chips[player] <- players$chips[player] - total_bet
+        player_bets[player] <- player_bets[player] + total_bet
+        current_bet <- player_bets[player]
+        betting_action <- TRUE
+        
+        cat(sprintf("%s: BIG RAISE to %d (+%d) (Win Prob: %.1f%%, %s)\n", 
+                    players$name[player], current_bet, raise_amount, win_prob * 100, hand_strength$name))
+        
+      } else if(decision == "all_in") {
+        all_in_amount <- players$chips[player]
+        pot <- pot + all_in_amount
+        player_bets[player] <- player_bets[player] + all_in_amount
+        players$chips[player] <- 0
+        if(player_bets[player] > current_bet) {
+          current_bet <- player_bets[player]
+          betting_action <- TRUE
+        }
+        
+        cat(sprintf("%s: ALL-IN %d chips! (Win Prob: %.1f%%, %s)\n", 
+                    players$name[player], all_in_amount, win_prob * 100, hand_strength$name))
+      }
+      
+      players_acted[player] <- TRUE
+    }
+  }
+  
+  cat(sprintf("Pot after %s: %d\n\n", round_name, pot))
+  return(list(active_players = active_players, players = players, pot = pot))
+}
+
 # Make betting decision based on hand strength and strategy
-make_decision <- function(win_prob, current_bet, pot_size, chips, hand_rank, strategy) {
+make_decision <- function(win_prob, current_bet, pot_size, chips, hand_rank, strategy, betting_round = "preflop") {
   pot_odds <- if(current_bet > 0) current_bet / (pot_size + current_bet) else 0
   
-  # Strategy-based thresholds
+  # Add randomness factor for gambling behavior (10% variance)
+  gambling_factor <- runif(1, 0.9, 1.1)
+  adjusted_prob <- win_prob * gambling_factor
+  
+  # Strategy-based thresholds - balanced for longer tournaments
   thresholds <- switch(strategy,
-    "tight" = list(fold = 0.3, call = 0.6, raise = 0.8),
-    "loose" = list(fold = 0.15, call = 0.4, raise = 0.7),
-    "aggressive" = list(fold = 0.2, call = 0.45, raise = 0.6),
-    "conservative" = list(fold = 0.35, call = 0.65, raise = 0.85),
-    "balanced" = list(fold = 0.25, call = 0.5, raise = 0.75)
+    "tight" = list(fold = 0.3, call = 0.55, raise = 0.75, big_raise = 0.9),
+    "loose" = list(fold = 0.15, call = 0.4, raise = 0.65, big_raise = 0.8),
+    "aggressive" = list(fold = 0.2, call = 0.4, raise = 0.6, big_raise = 0.75),
+    "conservative" = list(fold = 0.35, call = 0.6, raise = 0.8, big_raise = 0.9),
+    "balanced" = list(fold = 0.25, call = 0.45, raise = 0.65, big_raise = 0.8)
   )
   
-  # All-in threshold for tournament play
-  chip_ratio <- chips / (pot_size + current_bet)
+  # Tournament pressure - more aggressive when blinds are high
+  blind_pressure <- min(2.0, (pot_size / chips) + 0.5)
+  chip_ratio <- chips / max(pot_size, 50)  # Prevent division by very small pots
   
-  if(win_prob < thresholds$fold || chip_ratio < 3) {
+  # Bluffing chance - reduced for longer tournaments
+  bluff_chance <- switch(strategy,
+    "tight" = 0.03,
+    "loose" = 0.12,
+    "aggressive" = 0.15,
+    "conservative" = 0.01,
+    "balanced" = 0.08
+  )
+  
+  # Position-based aggression (simulate position play)
+  position_bonus <- runif(1, 0.95, 1.15)
+  final_prob <- adjusted_prob * position_bonus * blind_pressure
+  
+  # Decision logic with more raising
+  if(final_prob < thresholds$fold && runif(1) > bluff_chance) {
     return("fold")
-  } else if(win_prob < thresholds$call) {
+  } else if(final_prob < thresholds$call) {
+    # Sometimes bluff raise instead of calling
+    if(runif(1) < bluff_chance && chips > pot_size * 3) {
+      return("raise")
+    }
     return("call")
-  } else if(win_prob < thresholds$raise) {
+  } else if(final_prob < thresholds$raise) {
+    # More likely to raise in good spots
+    if(runif(1) < 0.7 && chips > pot_size * 2) {
+      return("raise")
+    }
     return("call")
-  } else {
-    if(chip_ratio < 5) return("all_in")
+  } else if(final_prob < thresholds$big_raise) {
     return("raise")
+  } else {
+    # Strong hands - big raise or all-in
+    if(chip_ratio < 8 || final_prob > 0.9) {
+      return("all_in")
+    }
+    return("big_raise")
   }
 }
 
@@ -264,33 +444,23 @@ play_tournament_hand <- function(players, small_blind, big_blind, strategy, deal
   
   # Show hole cards
   for(player in active_players) {
-    cards_str <- paste(apply(hole_cards[[player]], 1, function(x) paste(x[1], "of", x[2])), collapse = ", ")
-    cat(sprintf("%s hole cards: %s\n", players$name[player], cards_str))
+    cards_str <- format_cards(hole_cards[[player]])
+    cat(sprintf("%s hole cards:\t%s\n", players$name[player], cards_str))
   }
   cat("\n")
   
   # Pre-flop betting
   cat("=== PRE-FLOP ===\n")
-  for(player in active_players) {
-    if(players$chips[player] > 0) {
-      win_prob <- calculate_win_probability(hole_cards[[player]], NULL, length(active_players) - 1)
-      hand_eval <- evaluate_hand(hole_cards[[player]])
-      decision <- make_decision(win_prob, 0, pot, players$chips[player], hand_eval$rank, strategy)
-      
-      cat(sprintf("%s: Win Probability = %.2f%%, Decision = %s\n", 
-                  players$name[player], win_prob * 100, decision))
-      
-      if(decision == "fold") {
-        active_players <- active_players[active_players != player]
-      }
-    }
-  }
+  betting_round_result <- conduct_betting_round(active_players, players, hole_cards, NULL, pot, strategy, "preflop")
+  active_players <- betting_round_result$active_players
+  players <- betting_round_result$players
+  pot <- betting_round_result$pot
   
   if(length(active_players) <= 1) {
     winner <- if(length(active_players) == 1) active_players[1] else bb_player
     players$chips[winner] <- players$chips[winner] + pot
     players$hands_won[winner] <- players$hands_won[winner] + 1
-    cat(sprintf("\nWinner: Player %d wins pot of %d!\n", winner, pot))
+    cat(sprintf("\nWinner: %s wins pot of %d!\n", players$name[winner], pot))
     
     next_dealer <- (dealer_pos %% nrow(players)) + 1
     return(list(players = players, next_dealer = next_dealer))
@@ -299,46 +469,26 @@ play_tournament_hand <- function(players, small_blind, big_blind, strategy, deal
   # Flop
   if(length(active_players) > 1) {
     community_cards <- deal_community_cards(deck, 3)
-    cat(sprintf("Pot after pre-flop: %d\n\n", pot))
     cat("=== FLOP ===\n")
-    cat("Community cards:", paste(apply(community_cards, 1, function(x) paste(x[1], "of", x[2])), collapse = ", "), "\n\n")
+    cat("Community cards:", format_cards(community_cards), "\n\n")
     
-    for(player in active_players) {
-      combined_cards <- rbind(hole_cards[[player]], community_cards)
-      hand_strength <- evaluate_hand(combined_cards)
-      win_prob <- calculate_win_probability(hole_cards[[player]], community_cards, length(active_players) - 1)
-      decision <- make_decision(win_prob, 0, pot, players$chips[player], hand_strength$rank, strategy)
-      
-      cat(sprintf("Player %d: Current hand = %s, Win Probability = %.2f%%, Decision = %s\n", 
-                  player, hand_strength$name, win_prob * 100, decision))
-      
-      if(decision == "fold") {
-        active_players <- active_players[active_players != player]
-      }
-    }
+    betting_round_result <- conduct_betting_round(active_players, players, hole_cards, community_cards, pot, strategy, "flop")
+    active_players <- betting_round_result$active_players
+    players <- betting_round_result$players
+    pot <- betting_round_result$pot
   }
   
   # Turn
   if(length(active_players) > 1) {
     turn_card <- deal_community_cards(deck, 1, 4)
     community_cards <- rbind(community_cards, turn_card)
-    cat(sprintf("Pot after flop: %d\n\n", pot))
     cat("=== TURN ===\n")
-    cat("Community cards:", paste(apply(community_cards, 1, function(x) paste(x[1], "of", x[2])), collapse = ", "), "\n\n")
+    cat("Community cards:", format_cards(community_cards), "\n\n")
     
-    for(player in active_players) {
-      combined_cards <- rbind(hole_cards[[player]], community_cards)
-      hand_strength <- evaluate_hand(combined_cards)
-      win_prob <- calculate_win_probability(hole_cards[[player]], community_cards, length(active_players) - 1)
-      decision <- make_decision(win_prob, 0, pot, players$chips[player], hand_strength$rank, strategy)
-      
-      cat(sprintf("Player %d: Current hand = %s, Win Probability = %.2f%%, Decision = %s\n", 
-                  player, hand_strength$name, win_prob * 100, decision))
-      
-      if(decision == "fold") {
-        active_players <- active_players[active_players != player]
-      }
-    }
+    betting_round_result <- conduct_betting_round(active_players, players, hole_cards, community_cards, pot, strategy, "turn")
+    active_players <- betting_round_result$active_players
+    players <- betting_round_result$players
+    pot <- betting_round_result$pot
   }
   
   # Determine winner
@@ -350,7 +500,7 @@ play_tournament_hand <- function(players, small_blind, big_blind, strategy, deal
     community_cards <- rbind(community_cards, river_card)
     cat(sprintf("Pot after turn: %d\n\n", pot))
     cat("=== RIVER ===\n")
-    cat("Final community cards:", paste(apply(community_cards, 1, function(x) paste(x[1], "of", x[2])), collapse = ", "), "\n\n")
+    cat("Final community cards:", format_cards(community_cards), "\n\n")
     
     # Final showdown
     best_hand_rank <- -1
@@ -380,7 +530,7 @@ play_tournament_hand <- function(players, small_blind, big_blind, strategy, deal
   if(winner > 0) {
     players$chips[winner] <- players$chips[winner] + pot
     players$hands_won[winner] <- players$hands_won[winner] + 1
-    cat(sprintf("\nWinner: Player %d wins pot of %d!\n", winner, pot))
+    cat(sprintf("\nWinner: %s wins pot of %d!\n", players$name[winner], pot))
   }
   
   next_dealer <- (dealer_pos %% nrow(players)) + 1

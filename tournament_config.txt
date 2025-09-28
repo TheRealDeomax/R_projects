@@ -2,7 +2,7 @@
 # This file controls tournament settings
 
 # Number of players (2-10)
-num_players = 4
+num_players = 10
 
 # Starting chip stack for each player
 starting_chips = 1000
